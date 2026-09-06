@@ -48,7 +48,11 @@ def _normalize_monetary(value: Any) -> Any:
     # If value is already a canonical Money dict (its keys are exactly {"amount", "currency"}),
     # return it unchanged so the hook is idempotent. Numeric amounts and anything else pass
     # through untouched (a bare number is not a currency string and must not be coerced here).
-    raise NotImplementedError("TODO US-02: normalize a monetary field value")
+    if isinstance(value, str):
+        return normalize_currency(value).to_serializable()
+    if isinstance(value, dict) and set(value) == {"amount", "currency"}:
+        return value
+    return value
 
 
 def _normalize_status_value(value: Any) -> Any:
@@ -57,7 +61,11 @@ def _normalize_status_value(value: Any) -> Any:
     # status="executed". A hook that maps every status key crashes on "executed". So: leave bool
     # untouched; for an int (or an all-digits string) call normalize_status(value); otherwise
     # (an already-canonical label or a non-code string like "executed") return value unchanged.
-    raise NotImplementedError("TODO US-02: normalize a status field value")
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) or (isinstance(value, str) and value.isdigit()):
+        return normalize_status(value)
+    return value
 
 
 def normalization_hook(
@@ -74,4 +82,15 @@ def normalization_hook(
     # timestamp keys (in _TIMESTAMP_KEYS or ending in "_at") -> normalize_timestamp, but pass a
     # None value through untouched; status keys (in _STATUS_KEYS) -> _normalize_status_value;
     # any other key -> copy the value unchanged.
-    raise NotImplementedError("TODO US-02: route each field to its normalizer by key family")
+    new_result: dict[str, Any] = {}
+    for key, value in result.items():
+        if key in _MONETARY_KEYS or key.endswith("_balance"):
+            new_result[key] = _normalize_monetary(value)
+        elif key in _TIMESTAMP_KEYS or key.endswith("_at"):
+            # An absent timestamp is a legitimate state, not a parse failure.
+            new_result[key] = value if value is None else normalize_timestamp(value)
+        elif key in _STATUS_KEYS:
+            new_result[key] = _normalize_status_value(value)
+        else:
+            new_result[key] = value
+    return new_result
