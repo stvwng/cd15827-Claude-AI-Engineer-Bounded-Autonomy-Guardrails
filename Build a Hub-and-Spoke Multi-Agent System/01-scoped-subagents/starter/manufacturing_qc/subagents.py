@@ -52,7 +52,7 @@ DEFECT_CLASSIFIER = SubagentDefinition(
     # exact phrase "return JSON conforming to DefectClassification". Do not write
     # procedural steps ("First, ... Then, ..."). Do not mention components or the
     # supplier subagent's scope.
-    system_prompt="",
+    system_prompt="you are a defect classifier. your job is to classify defects into a severity and a defect type using the BrightCircuit's taxonomy. return JSON conforming to DefectClassification.",
     # TODO: This subagent needs no external tools (only its schema-bound emit tool,
     # which the runner adds automatically). Leave the tuple empty.
     allowed_tools=(),
@@ -68,9 +68,9 @@ SUPPLIER_DATA = SubagentDefinition(
     # "return JSON conforming to SupplierFindings". Do not write procedural steps.
     # Do not mention the defect description (that is the classifier's scope) and
     # do not propose corrective actions.
-    system_prompt="",
+    system_prompt="you are a supplier data subagent. your job is to look up each component's most recent lot in the components database and summarize cross-component sourcing patterns. return JSON conforming to SupplierFindings.",
     # TODO: This subagent needs the sqlite_lookup external tool. Add it.
-    allowed_tools=(),
+    allowed_tools=("sqlite_lookup",),
     output_schema=SupplierFindings,
 )
 
@@ -86,7 +86,7 @@ ROOT_CAUSE = SubagentDefinition(
     # description_summary, component_records, supplier_incident_summary,
     # component_id, supplier, lot_id, received_at, prior_incidents). Do not propose
     # corrective actions (that is the report agent's scope).
-    system_prompt="",
+    system_prompt="you are a root cause investigator. your job is to propose ranked root-cause hypotheses with cited evidence, given a DefectClassification and SupplierFindings that may be null. return JSON conforming to RootCauseHypothesis.",
     # TODO: This subagent needs no external tools.
     allowed_tools=(),
     output_schema=RootCauseHypothesis,
@@ -101,8 +101,8 @@ REPORT = SubagentDefinition(
     # hypothesis fails to address a dimension a supervisor would need) and use
     # the phrase "return JSON conforming to SubagentReport". Tell the model to
     # use the emit_report tool to finalize.
-    system_prompt="",
+    system_prompt="you are a corrective-action report author. your job is to compose a corrective-action report for the shift supervisor; populate coverage_gap with a one-sentence description when the hypothesis fails to address a dimension a supervisor would need. return JSON conforming to SubagentReport.",
     # TODO: This subagent uses the emit_report tool to finalize its output.
-    allowed_tools=(),
+    allowed_tools=("emit_report",),
     output_schema=SubagentReport,
 )

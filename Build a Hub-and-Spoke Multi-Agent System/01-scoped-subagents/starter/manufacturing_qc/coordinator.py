@@ -43,6 +43,10 @@ SCOPE_COVERAGE: dict[str, str] = {
     # The four dimensions are: 'defect-type', 'sourcing', 'root-cause', 'corrective-action'.
     # Use the subagent constants imported above (e.g., DEFECT_CLASSIFIER.name -> 'defect-type').
     # No dimension may be orphaned: jointly the four entries must cover all four dimensions.
+    DEFECT_CLASSIFIER.name: 'defect-type',
+    SUPPLIER_DATA.name: 'sourcing',
+    ROOT_CAUSE.name: 'root-cause',
+    REPORT.name: 'corrective-action',
 }
 """Maps each subagent to the dimension of defect analysis it owns. The four
 dimensions are exhaustive for this scope; see PRD section 4 AC-01-06."""
