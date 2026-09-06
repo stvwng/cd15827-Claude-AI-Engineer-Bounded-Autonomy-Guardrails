@@ -64,7 +64,11 @@ class HookEngine:
         # decision wins: return it immediately and do not run the remaining hooks. Use
         # HookDecision.is_allow to test a decision. If every hook allows, return
         # HookDecision.allow().
-        raise NotImplementedError("TODO US-01: implement PreToolUse short-circuit")
+        for hook in self._pre:
+            decision = hook(call, state)
+            if not decision.is_allow:
+                return decision
+        return HookDecision.allow()
 
     def run_post(
         self, tool_name: str, result: dict[str, Any], state: SessionState
@@ -96,7 +100,26 @@ class HookEngine:
         #      through self.run_post(call.name, raw, state). If this call was a successful
         #      verify_kyc (the result has a truthy "kyc_verified" and a "customer_id"), add that
         #      id to state.verified_customers. Return a non-error ToolResult wrapping the result.
-        raise NotImplementedError("TODO US-01: implement engine enforcement + dispatch")
+        customer_id = call.input.get("customer_id")
+        decision = self.run_pre(call, state)
+        self.log.record(call.name, customer_id, decision.decision, decision.reason)
+        if decision.decision == DecisionType.DENY:
+            return self._business_error(call.name, decision.reason)
+        elif decision.decision == DecisionType.REDIRECT:
+            queue_name = decision.target or "compliance_review_queue"
+            self.queues.setdefault(queue_name, []).append(decision.payload or {})
+            return self._business_error(call.name, "Call was held for review")
+        else:
+            raw = registry[call.name](**call.input)
+            result = self.run_post(call.name, raw, state)
+            if call.name == "verify_kyc" and result.get("kyc_verified"):
+                state.verified_customers.add(result["customer_id"])
+            return ToolResult(
+                tool_name=call.name,
+                content=result,
+                is_error=False,
+                is_retryable=False,
+            )
 
     @staticmethod
     def _business_error(tool_name: str, reason: str) -> ToolResult:
