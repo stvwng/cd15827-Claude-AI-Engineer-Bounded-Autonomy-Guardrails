@@ -135,9 +135,12 @@ def build_root_cause_payload(
     # calling `DefectClassification.model_validate(defect_classification)`. If the dict
     # is malformed (missing fields, bad severity value, etc.) Pydantic raises a
     # ValidationError, which is exactly the behavior the test suite expects.
+    DefectClassification.model_validate(defect_classification)
     # TODO: If supplier_findings is not None, validate it against SupplierFindings the
     # same way. Skip validation when supplier_findings is None (a legitimate state on
     # supplier-subagent partial failure).
+    if supplier_findings is not None:
+        SupplierFindings.model_validate(supplier_findings)
     return {
         "defect_classification": dict(defect_classification),
         "supplier_findings": (
