@@ -101,7 +101,17 @@ def score_risk_flags(tool_input: dict[str, Any], customer: dict[str, Any]) -> li
     #   - "round_amount": the amount is an exact multiple of 1000
     #   - "dormant_account": the customer "status" is 2 or "dormant"
     # Keep it open/extensible (append flags), not a single hardcoded condition.
-    raise NotImplementedError("TODO US-03: implement the cheap risk scorer")
+    risk_flags = []
+    if coerce_money(tool_input.get("amount")).amount > TRANSFER_THRESHOLD:
+        risk_flags.append("over_threshold")
+    destination_country = tool_input.get("destination_country")
+    if destination_country and destination_country != customer.get("country"):
+        risk_flags.append("cross_border")
+    if coerce_money(tool_input.get("amount")).amount % 1000 == 0:
+        risk_flags.append("round_amount")
+    if customer.get("status") in (2, "dormant"):
+        risk_flags.append("dormant_account")
+    return risk_flags
 
 
 def build_handoff_summary(tool_input: dict[str, Any], customer: dict[str, Any]) -> HandoffSummary:
@@ -115,7 +125,26 @@ def build_handoff_summary(tool_input: dict[str, Any], customer: dict[str, Any]) 
     # names the amount and the threshold it breached (and the cross-border detail when that flag
     # is present), and a concrete recommended_action. Populate customer_id, transaction_type
     # (default "wire_transfer"), amount, origin_account, and destination_account from tool_input.
-    raise NotImplementedError("TODO US-03: build the self-contained handoff summary")
+    amount = coerce_money(tool_input.get("amount"))
+    risk_flags = score_risk_flags(tool_input, customer)
+    reason_for_escalation = f"Amount {amount.amount} exceeds threshold {TRANSFER_THRESHOLD}"
+    if "cross_border" in risk_flags:
+        reason_for_escalation += (
+            f" and crosses borders from {customer.get('country')} "
+            f"to {tool_input.get('destination_country')}"
+        )
+    if "round_amount" in risk_flags:
+        reason_for_escalation += " and is an exact multiple of 1000"
+    return HandoffSummary(
+        customer_id=str(tool_input["customer_id"]),
+        transaction_type=str(tool_input.get("transaction_type", "wire_transfer")),
+        amount=amount,
+        origin_account=str(tool_input["origin_account"]),
+        destination_account=str(tool_input["destination_account"]),
+        risk_flags=risk_flags,
+        reason_for_escalation=reason_for_escalation,
+        recommended_action="Hold for review",
+    )
 
 
 def make_amount_threshold_hook(load_customer_fn: CustomerLoader) -> Callable[..., HookDecision]:
@@ -132,7 +161,14 @@ def make_amount_threshold_hook(load_customer_fn: CustomerLoader) -> Callable[...
         # build a handoff with build_handoff_summary, and return
         # HookDecision.redirect("compliance_review_queue", handoff.model_dump(mode="json")).
         # At or below the threshold, return HookDecision.allow().
-        raise NotImplementedError("TODO US-03: implement the interception + redirect hook")
+        if call.name != "initiate_transfer":
+            return HookDecision.allow()
+        amount = coerce_money(call.input.get("amount"))
+        if amount.amount <= TRANSFER_THRESHOLD:
+            return HookDecision.allow()
+        customer = load_customer_fn(str(call.input["customer_id"]))
+        handoff = build_handoff_summary(call.input, customer)
+        return HookDecision.redirect("compliance_review_queue", handoff.model_dump(mode="json"))
 
     return amount_threshold_hook
 
