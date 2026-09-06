@@ -9,6 +9,9 @@ The two projects show two complementary ways to keep an autonomous agent inside
 its lane: **structural** boundaries between cooperating agents, and **deterministic** code
 that enforces compliance regardless of the prompt.
 
+> **[PRIMER.md](PRIMER.md)** walks through all seven build steps — each explained twice, once in
+> plain English and once for engineers, with the trap each step is designed to teach.
+
 ## Folder Structure
 
 The repo contains one folder per project. Each project folder contains numbered
