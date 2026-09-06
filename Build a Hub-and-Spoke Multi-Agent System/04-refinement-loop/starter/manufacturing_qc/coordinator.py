@@ -51,10 +51,13 @@ dimensions are exhaustive for this scope; see PRD section 4 AC-01-06."""
 class Coordinator:
     """Hub of the hub-and-spoke multi-agent system."""
 
-    def __init__(self, runner: SubagentRunner) -> None:
+    def __init__(self, runner: SubagentRunner, max_refinements: int = 1) -> None:
         # TODO: Add a `max_refinements: int = 1` parameter. Reject negative values
         # with `raise ValueError("max_refinements must be >= 0")`. Store it on self
         # as `self._max_refinements`.
+        if max_refinements < 0:
+            raise ValueError("max_refinements must be >= 0")
+        self._max_refinements = max_refinements
         self._runner = runner
 
     async def run(self, report: DefectReport) -> CorrectiveActionReport:
@@ -78,11 +81,27 @@ class Coordinator:
         #     to get the updated subagent_report.
         # After the loop, return a CorrectiveActionReport whose `refinement_rounds`
         # is the counter you just maintained (NOT hardcoded to 0).
+        refinement_rounds = 0
+        while (
+            subagent_report.coverage_gap is not None
+            and refinement_rounds < self._max_refinements
+        ):
+            refinement_rounds += 1
+            hypothesis = await self._invoke_root_cause(
+                classification,
+                supplier_findings,
+                refinement=_build_refinement_query(
+                    subagent_report.coverage_gap, hypothesis
+                ),
+            )
+            subagent_report = await self._invoke_report(
+                report.defect_id, hypothesis, partial_failures
+            )
         return CorrectiveActionReport(
             defect_id=report.defect_id,
             corrective_actions=list(subagent_report.corrective_actions),
             coverage_gap=subagent_report.coverage_gap,
-            refinement_rounds=0,
+            refinement_rounds=refinement_rounds,
             partial_failures=partial_failures,
         )
 
@@ -116,14 +135,15 @@ class Coordinator:
         self,
         classification: DefectClassification,
         supplier_findings: SupplierFindings | None,
+        refinement: str | None = None,
     ) -> RootCauseHypothesis:
-        # TODO: Add a keyword-only `refinement: str | None = None` parameter.
-        # If `refinement` is not None, add it to the payload under the key "refinement"
-        # so the root_cause subagent sees the re-investigation directive.
         payload = build_root_cause_payload(
             classification.model_dump(),
             supplier_findings.model_dump() if supplier_findings is not None else None,
         )
+        # Only present on re-investigation, so the first call's payload stays clean.
+        if refinement is not None:
+            payload["refinement"] = refinement
         result = await self._runner.run(ROOT_CAUSE, payload)
         return _expect(result, RootCauseHypothesis)
 
@@ -142,10 +162,17 @@ class Coordinator:
         return _expect(result, SubagentReport)
 
 
-# TODO: Implement _build_refinement_query(gap: str, prior: RootCauseHypothesis) -> str.
-# Format: "Re-investigate: <gap>. Prior hypothesis: <summary>"
-# where <summary> is the prior hypothesis's ranked_causes joined as
-# "1) <text> (<confidence>); 2) <text> (<confidence>); ..." in order.
+def _build_refinement_query(gap: str, prior: RootCauseHypothesis) -> str:
+    """Compose the re-investigation directive handed back to the root-cause subagent.
+
+    The prior hypothesis is replayed in rank order so the subagent can address the
+    gap without re-deriving what it already concluded.
+    """
+    summary = "; ".join(
+        f"{rank}) {cause.text} ({cause.confidence})"
+        for rank, cause in enumerate(prior.ranked_causes, start=1)
+    )
+    return f"Re-investigate: {gap}. Prior hypothesis: {summary}"
 
 
 def build_root_cause_payload(
