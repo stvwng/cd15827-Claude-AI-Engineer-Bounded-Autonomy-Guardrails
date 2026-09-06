@@ -112,7 +112,9 @@ class AnthropicRunner:
         response = self._client.messages.create(
             model=self._model,
             max_tokens=self._max_tokens,
-            temperature=0,
+            # anthropic 1.x dropped temperature from the create() signature; this harness
+            # measures deterministic enforcement, so the setting is sent via extra_body.
+            extra_body={"temperature": 0},
             system=system,
             tools=tools,
             messages=messages,
